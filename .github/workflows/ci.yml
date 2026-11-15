@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Verify Rust workspace
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+      - id: cargo-tools
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/bin/cargo-deny
+            ~/.cargo/bin/cargo-machete
+            ~/.cargo/bin/just
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-tools-${{ hashFiles('justfile', 'rust-toolchain.toml') }}-just-1.59.0
+      - if: steps.cargo-tools.outputs.cache-hit != 'true'
+        run: |
+          cargo install just --version 1.59.0 --locked
+          just setup
+      - run: just verify
