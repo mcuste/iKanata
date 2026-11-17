@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-17
+
 ### Added
 
 - Add the iKanata app and CLI for Apple Silicon Macs running macOS 15 or later.
