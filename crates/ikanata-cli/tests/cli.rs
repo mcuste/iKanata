@@ -11,7 +11,7 @@ fn help_and_version_describe_the_available_interface() {
     assert!(help.status.success());
     let help_text = String::from_utf8(help.stdout).expect("UTF-8 help output");
     assert!(help_text.contains("Usage: ikanata"));
-    assert!(help.stderr.is_empty());
+    assert_eq!(help.stderr.as_slice(), b"");
 
     let version = Command::new(env!("CARGO_BIN_EXE_ikanata"))
         .arg("--version")
@@ -22,7 +22,7 @@ fn help_and_version_describe_the_available_interface() {
         String::from_utf8(version.stdout).expect("UTF-8 version output"),
         format!("ikanata {}\n", env!("CARGO_PKG_VERSION"))
     );
-    assert!(version.stderr.is_empty());
+    assert_eq!(version.stderr.as_slice(), b"");
 }
 
 #[test]
@@ -34,7 +34,7 @@ fn unsupported_commands_and_extra_arguments_fail() {
             .output()
             .expect("run ikanata with invalid arguments");
         assert!(!output.status.success());
-        assert!(output.stdout.is_empty());
+        assert_eq!(output.stdout.as_slice(), b"");
         let error = String::from_utf8(output.stderr).expect("UTF-8 error output");
         assert!(error.contains("error:"));
     }

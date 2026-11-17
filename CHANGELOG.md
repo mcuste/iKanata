@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep CLI output assertions compatible with current Clippy checks.
+
 ## [0.1.0] - 2026-11-17
 
 ### Added
