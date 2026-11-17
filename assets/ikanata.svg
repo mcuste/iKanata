@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>iKanata</title>
+  <desc>A pink keycap marked with a blue lowercase i and a plum uppercase K on a rounded purple tile.</desc>
+  <defs>
+    <linearGradient id="tile" x1="0%" y1="0%" x2="85%" y2="100%">
+      <stop offset="0" stop-color="#594dd1"/>
+      <stop offset="1" stop-color="#3c205f"/>
+    </linearGradient>
+    <linearGradient id="bevel" x1="0%" y1="0%" x2="60%" y2="100%">
+      <stop offset="0" stop-color="#f2b9e8"/>
+      <stop offset="1" stop-color="#ce77c5"/>
+    </linearGradient>
+    <linearGradient id="face" x1="0%" y1="0%" x2="70%" y2="100%">
+      <stop offset="0" stop-color="#fff1fd"/>
+      <stop offset="1" stop-color="#ffd4fa"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="380" y1="359" x2="420" y2="570" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2b66e9"/>
+      <stop offset="1" stop-color="#5142c7"/>
+    </linearGradient>
+  </defs>
+  <path d="M659 100c196 0 265 69 265 265v294c0 196-69 265-265 265H365c-196 0-265-69-265-265V365c0-196 69-265 265-265Z"
+        fill="url(#tile)" stroke="#8a79db" stroke-width="4"/>
+  <path d="M336 279h352c52 0 87 30 99 77l57 330c10 55-25 99-83 99H263c-58 0-93-44-83-99l57-330c12-47 47-77 99-77Z"
+        fill="#25113c" opacity=".34"/>
+  <path d="M336 253h352c52 0 87 30 99 77l57 330c10 55-25 99-83 99H263c-58 0-93-44-83-99l57-330c12-47 47-77 99-77Z"
+        fill="url(#bevel)"/>
+  <path d="M180 660c6 42 36 65 83 65h498c47 0 77-23 83-65 10 55-25 99-83 99H263c-58 0-93-44-83-99Z"
+        fill="#652765" opacity=".23"/>
+  <path d="M337 256h350c46 0 77 25 84 69l29 248c6 49-24 76-75 76H299c-51 0-81-27-75-76l29-248c7-44 38-69 84-69Z"
+        fill="url(#face)" stroke="#fff5fe" stroke-width="6"/>
+  <circle cx="380" cy="384" r="28" fill="url(#accent)"/>
+  <rect x="351" y="436" width="58" height="138" rx="17" fill="url(#accent)"/>
+  <path d="M487 381v167m157-167L502 484m51-37 95 101"
+        fill="none" stroke="#482049" stroke-width="52" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

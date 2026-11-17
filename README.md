@@ -1,5 +1,7 @@
 # iKanata
 
+<img src="assets/ikanata.svg" alt="iKanata logo: a pink keycap with a blue i and a plum K" width="160">
+
 Minimal Kanata app for Apple Silicon Macs running macOS 15 or later.
 
 ## Installation and permissions
@@ -23,3 +25,5 @@ Local upgrade/uninstall verification currently fails.
 ## License
 
 [MIT](LICENSE).
+
+The iKanata logo takes inspiration from [Kanata's original pink keycap](https://github.com/jtroo/kanata/blob/main/assets/kanata-icon.svg).

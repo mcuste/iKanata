@@ -43,6 +43,29 @@ section, not a link or automatically generated commit notes.
 Commit and push the tap change after Homebrew validation and VM lifecycle checks.
 The workflow does not need credentials for the tap and does not modify it.
 
+## App icon
+
+The README uses `assets/ikanata.svg`. The app bundle uses the checked-in
+`assets/iKanata.icns`, so release builds do not need ImageMagick.
+After editing the SVG, run these commands from the repository root with
+ImageMagick and macOS `iconutil`:
+
+```sh
+work=target/ikanata-logo
+mkdir -p "$work/iKanata.iconset"
+magick -background none assets/ikanata.svg -colorspace sRGB PNG32:"$work/master.png"
+for size in 16 32 128 256 512; do
+  magick "$work/master.png" -resize "${size}x${size}" -strip \
+    PNG32:"$work/iKanata.iconset/icon_${size}x${size}.png"
+  double=$((size * 2))
+  magick "$work/master.png" -resize "${double}x${double}" -strip \
+    PNG32:"$work/iKanata.iconset/icon_${size}x${size}@2x.png"
+done
+iconutil --convert icns --output assets/iKanata.icns "$work/iKanata.iconset"
+```
+
+Commit the SVG and ICNS together.
+
 ## Local packages
 
 1. Build the local installer from the repository root.

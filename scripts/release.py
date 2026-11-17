@@ -203,7 +203,7 @@ def corresponding_source(version):
     project.mkdir(parents=True)
     for name in ("Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "LICENSE"):
         shutil.copy2(ROOT / name, project / name)
-    for name in ("crates", "scripts", "packaging", "release"):
+    for name in ("assets", "crates", "scripts", "packaging", "release"):
         shutil.copytree(ROOT / name, project / name,
                         ignore=shutil.ignore_patterns("target", "__pycache__", ".env", ".env.*"))
     vendor_sources(project, staging / "ikanata-dependency-licenses.json")
@@ -240,6 +240,8 @@ def bundle(version, engine, binaries, sources):
     contents = app / "Contents"
     resources = contents / "Resources"
     resources.mkdir(parents=True)
+    icon = ROOT / "assets" / "iKanata.icns"
+    copy_file(icon, resources / icon.name)
     runtime = payload / PRIVATE / "Runtime"
     clients = runtime / "Clients"
     clients.mkdir(parents=True)
@@ -251,6 +253,7 @@ def bundle(version, engine, binaries, sources):
             "CFBundleName": "iKanata",
             "CFBundleDisplayName": "iKanata",
             "CFBundleExecutable": "ikanata-app",
+            "CFBundleIconFile": icon.name,
             "CFBundlePackageType": "APPL",
             "CFBundleInfoDictionaryVersion": "6.0",
             "CFBundleShortVersionString": version,
