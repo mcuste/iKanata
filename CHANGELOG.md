@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-17
+
 ### Added
 
 - Add the iKanata logo to the README and the macOS app bundle.
