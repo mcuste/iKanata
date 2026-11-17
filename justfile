@@ -53,6 +53,12 @@ verify: check test
 run *args:
     cargo run --locked --bin ikanata -- "$@"
 
+release version *args:
+    python3 scripts/prepare_release.py "$@"
+
+package version base_url:
+    python3 scripts/release.py release --version "$1" --release-base-url "$2"
+
 engine:
     python3 scripts/release.py engine
 

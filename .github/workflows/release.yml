@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Verify and package Apple Silicon installer
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+      - name: Validate release version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, "scripts")
+          from prepare_release import version_parts
+          version = os.environ["RELEASE_TAG"].removeprefix("v")
+          version_parts(version)
+          manifest = tomllib.loads(Path("Cargo.toml").read_text())
+          if manifest["workspace"]["package"]["version"] != version:
+              raise SystemExit("Release tag and workspace version differ")
+          PY
+      - name: Install verification tools
+        run: |
+          cargo install just --version 1.59.0 --locked
+          just setup
+      - run: just verify
+      - name: Build release artifacts
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+        run: just package "${RELEASE_TAG#v}" "https://github.com/${RELEASE_REPOSITORY}/releases/download/${RELEASE_TAG}"
+      - name: Extract release notes
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 scripts/changelog.py "${RELEASE_TAG#v}" > target/ikanata-release/ikanata-release-notes.md
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release
+          if-no-files-found: error
+          path: |
+            target/ikanata-release/iKanata-*-arm64.pkg
+            target/ikanata-release/iKanata-*-source.tar.gz
+            target/ikanata-release/SHA256SUMS
+            target/ikanata-release/release-metadata.json
+            target/ikanata-release/ikanata.rb
+            target/ikanata-release/ikanata-release-notes.md
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: release
+          path: dist
+      - name: Publish artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          cd dist
+          shasum -a 256 -c SHA256SUMS
+          gh release create "$RELEASE_TAG" --verify-tag --title "iKanata ${RELEASE_TAG#v}" \
+            --notes-file ikanata-release-notes.md iKanata-*-arm64.pkg iKanata-*-source.tar.gz \
+            SHA256SUMS release-metadata.json ikanata.rb

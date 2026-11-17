@@ -3,6 +3,48 @@
 Use an Apple Silicon Mac with macOS 15+, Python 3.9+, Rust stable, and Xcode tools.
 No Apple developer account, signing identity, or credentials are required.
 
+## Tagged releases
+
+Use Python 3.11+ for release preparation. Start on `main` with a clean working tree.
+Add release entries under `## [Unreleased]` in `CHANGELOG.md` and commit them first.
+
+1. Prepare and verify the workspace release.
+
+```sh
+just release 0.1.0
+```
+
+The command updates the workspace version, local dependency versions, and lockfile.
+It moves the unreleased changelog entries into a dated version section and keeps
+an empty `[Unreleased]` section. It rejects empty notes and duplicate releases.
+It runs `just verify`, commits release metadata and the changelog, and creates `v0.1.0`.
+Verification failures restore the manifest, lockfile, and changelog. Other changes remain.
+An existing tag or a lower version fails without changing files.
+
+2. Push the branch and tag together.
+
+```sh
+git push --atomic origin main v0.1.0
+```
+
+Use `just release 0.1.0 --push` to prepare and push in one command.
+If pushing fails, the local commit and tag remain. Retry the push command.
+
+The Release workflow verifies the workspace on an Apple Silicon macOS runner.
+It builds and publishes the installer, corresponding source, checksums, metadata,
+and `ikanata.rb` as GitHub release assets. It does not install the package or run
+interactive VM tests. Complete those checks before pushing a release tag.
+The package remains unsigned and unnotarized.
+The GitHub release body contains the actual entries from that version's changelog
+section, not a link or automatically generated commit notes.
+
+3. Copy the published `ikanata.rb` into `Casks/ikanata.rb` in the Homebrew tap.
+
+Commit and push the tap change after Homebrew validation and VM lifecycle checks.
+The workflow does not need credentials for the tap and does not modify it.
+
+## Local packages
+
 1. Build the local installer from the repository root.
 
 ```sh
