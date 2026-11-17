@@ -1,0 +1,199 @@
+diff --git a/src/oskbd/macos.rs b/src/oskbd/macos.rs
+--- a/src/oskbd/macos.rs
++++ b/src/oskbd/macos.rs
+@@ -38,6 +38,35 @@
+ use std::sync::atomic::{AtomicBool, Ordering};
+ use std::sync::mpsc::SyncSender as Sender;
+ use std::time::{Duration, Instant};
++
++static IKANATA_SHUTDOWN: AtomicBool = AtomicBool::new(false);
++static IKANATA_EXIT_CODE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
++
++extern "C" fn ikanata_sigterm(_signal: libc::c_int) {
++    IKANATA_SHUTDOWN.store(true, Ordering::SeqCst);
++}
++
++pub fn install_ikanata_shutdown_handler() -> io::Result<()> {
++    // SAFETY: the handler only stores a lock-free atomic flag.
++    if unsafe { libc::signal(libc::SIGTERM, ikanata_sigterm as *const () as libc::sighandler_t) } == libc::SIG_ERR {
++        return Err(io::Error::last_os_error());
++    }
++    Ok(())
++}
++
++pub fn request_ikanata_shutdown(code: i32) {
++    IKANATA_EXIT_CODE.store(code, Ordering::SeqCst);
++    IKANATA_SHUTDOWN.store(true, Ordering::SeqCst);
++}
++
++pub fn ikanata_shutdown_requested() -> bool {
++    IKANATA_SHUTDOWN.load(Ordering::SeqCst)
++}
++
++pub fn finish_ikanata_shutdown() -> ! {
++    // SAFETY: _exit avoids the DriverKit static destructor race.
++    unsafe { libc::_exit(IKANATA_EXIT_CODE.load(Ordering::SeqCst)) }
++}
+ 
+ /// Mouse `OsCode`s that, when present in `MAPPED_KEYS`, justify installing the
+ /// CGEventTap. Used both as the startup/reload install gate and as the set of
+@@ -1086,6 +1115,7 @@
+ #[cfg(all(not(feature = "simulated_output"), not(feature = "passthru_ahk")))]
+ pub struct KbdOut {
+     output_pressed_since: HashMap<OsCode, Instant>,
++    ikanata_mouse_buttons: u8,
+     caps_lock_state: Option<bool>,
+ }
+ 
+@@ -1116,6 +1146,7 @@
+     pub fn new() -> Result<Self, io::Error> {
+         Ok(KbdOut {
+             output_pressed_since: HashMap::default(),
++            ikanata_mouse_buttons: 0,
+             caps_lock_state: get_hid_caps_lock_state(),
+         })
+     }
+@@ -1152,6 +1183,9 @@
+                 io::ErrorKind::NotConnected,
+                 "DriverKit virtual keyboard not ready (sink disconnected)",
+             ));
++        }
++        if let Ok(key_event) = KeyEvent::try_from(event) {
++            self.record_output_transition_after_write(key_event.code, key_event.value);
+         }
+         Ok(())
+     }
+@@ -1198,10 +1232,7 @@
+     pub fn write_key(&mut self, key: OsCode, value: KeyValue) -> Result<(), io::Error> {
+         if let Ok(event) = InputEvent::try_from(KeyEvent::new(key, value)) {
+             match self.write(event) {
+-                Ok(()) => {
+-                    self.record_output_transition_after_write(key, value);
+-                    Ok(())
+-                }
++                Ok(()) => Ok(()),
+                 Err(e) => drop_if_sink_disconnected(e, key, value),
+             }
+         } else {
+@@ -1250,6 +1281,16 @@
+         }
+ 
+         self.output_pressed_since.clear();
++    }
++
++    pub fn ikanata_release_output(&mut self) {
++        self.release_tracked_output_keys("shutdown");
++        for (mask, button) in [(1, Btn::Left), (2, Btn::Right), (4, Btn::Mid),
++                               (8, Btn::Backward), (16, Btn::Forward)] {
++            if self.ikanata_mouse_buttons & mask != 0 {
++                let _ = self.release_btn(button);
++            }
++        }
+     }
+ 
+     pub fn send_unicode(&mut self, c: char) -> Result<(), io::Error> {
+@@ -1354,12 +1395,24 @@ fn button_action(&mut self, btn: Btn, is_click: bool) -> Result<(), io::Error> {
+         if let Some(num) = button_number {
+             event.set_integer_value_field(EventField::MOUSE_EVENT_BUTTON_NUMBER, num);
+         }
+ 
+         // Mouse control only seems to work with CGEventTapLocation::HID.
+         event.post(CGEventTapLocation::HID);
++        let mask = match btn {
++            Btn::Left => 1,
++            Btn::Right => 2,
++            Btn::Mid => 4,
++            Btn::Backward => 8,
++            Btn::Forward => 16,
++        };
++        if is_click {
++            self.ikanata_mouse_buttons |= mask;
++        } else {
++            self.ikanata_mouse_buttons &= !mask;
++        }
+         Ok(())
+     }
+ 
+     pub fn click_btn(&mut self, btn: Btn) -> Result<(), io::Error> {
+         Self::button_action(self, btn, true)
+     }
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -22,5 +22,7 @@
+     /// Parse CLI arguments and initialize logging.
+     fn cli_init() -> Result<(ValidatedArgs, Option<String>)> {
++        #[cfg(target_os = "macos")]
++        oskbd::install_ikanata_shutdown_handler()?;
+         let args = Args::parse();
+ 
+         #[cfg(all(target_os = "macos", not(feature = "gui")))]
+@@ -194,6 +196,9 @@
+             Kanata::new_arc(&args)?
+         };
+ 
++        #[cfg(target_os = "macos")]
++        Kanata::start_ikanata_shutdown(kanata_arc.clone());
++
+         if !args.nodelay {
+             log::info!(
+                 "Sleeping for 2s. Please release all keys and don't press additional ones. Run kanata with --help to see how understand more and how to disable this sleep."
+diff --git a/src/kanata/macos.rs b/src/kanata/macos.rs
+--- a/src/kanata/macos.rs
++++ b/src/kanata/macos.rs
+@@ -8,6 +8,19 @@
+ use std::time::Duration;
+ 
+ impl Kanata {
++    pub fn start_ikanata_shutdown(kanata: Arc<Mutex<Self>>) {
++        std::thread::spawn(move || {
++            while !crate::oskbd::ikanata_shutdown_requested() {
++                std::thread::sleep(Duration::from_millis(10));
++            }
++            let mut state = kanata.lock();
++            state.kbd_out.ikanata_release_output();
++            // Prevent new output while the driver processes queued release reports.
++            std::thread::sleep(Duration::from_millis(100));
++            crate::oskbd::finish_ikanata_shutdown();
++        });
++    }
++
+     /// Enter an infinite loop that listens for OS key events and sends them to the processing thread.
+     ///
+     /// Contains a recovery mechanism: if the DriverKit output connection drops
+diff --git a/src/kanata/mod.rs b/src/kanata/mod.rs
+--- a/src/kanata/mod.rs
++++ b/src/kanata/mod.rs
+@@ -2677,29 +2677,12 @@
+                 // from a thread that has no access to the main one, so
+                 // can't stop main thread's dispatch
+             }
+-            // macOS: use `libc::_exit` instead of `std::process::exit` to
+-            // skip C++ static destructors. The underlying pqrs shared
+-            // dispatcher (used by the karabiner-driverkit crate) has a
+-            // teardown race where its destructor kills its own worker
+-            // threads while they still hold a `std::mutex`, which then
+-            // throws `std::system_error: mutex lock failed` on
+-            // `pthread_mutex_destroy`. That exception is uncaught and
+-            // aborts the process with a cryptic libc++abi message right
+-            // after the user's kill chord. `_exit` bypasses the whole
+-            // mess by jumping straight to the kernel exit syscall.
+-            //
+-            // Flush stdio first so any buffered log output (including the
+-            // "exiting" line we just emitted) actually reaches the user.
+             #[cfg(target_os = "macos")]
+             {
+-                use std::io::Write;
+-                let _ = std::io::stderr().flush();
+-                let _ = std::io::stdout().flush();
+                 let code = EMERGENCY_EXIT_CODE.load(std::sync::atomic::Ordering::SeqCst);
+-                // SAFETY: `_exit` has no preconditions; it terminates the
+-                // process immediately without running user destructors.
+-                unsafe {
+-                    libc::_exit(code);
++                crate::oskbd::request_ikanata_shutdown(code);
++                loop {
++                    std::thread::park();
+                 }
+             }
+             // Linux/Android: Use SIGTERM to trigger signal handler for cleanup

@@ -1,0 +1,48 @@
+iKanata distributes modified Kanata as a separate signed executable.
+Kanata v1.12.0, source 02242ef761ef43b860eac30067ce86904be7d466,
+is licensed under LGPL-3.0-only. It includes the MIT-licensed Kanata
+keyberon fork. Copyright and dependency license notices remain in the
+corresponding source and vendored dependency directories.
+
+Modifications dated 2026-11-15 to 2026-11-16 replace the macOS TCP transport with a
+root-only Unix socket, read privileged configurations through an
+owner-privilege reader, and add permission, shutdown, and root console checks.
+The patches retain reload result reporting and relative include-path resolution.
+Missing configuration dependencies fail parsing rather than producing empty files.
+
+Resources/Licenses contains the LGPL, GPL, and driver license texts.
+Resources/CorrespondingSource.tar.gz contains the complete modified
+Kanata and iKanata source, their locked dependency sources and license
+texts, patches, and build and installation scripts. The same archive
+accompanies the installer at its release download location at no charge.
+See source/ikanata/release/RELEASING.md inside that archive for rebuilding.
+You may modify and redistribute the covered source under its license.
+There is no warranty. Do not remove access to corresponding source when
+redistributing binaries.
+
+The unmodified Karabiner-DriverKit-VirtualHIDDevice 8.0.0 installer is
+upstream signed by Fumihiko Takayama, team G43BCU2T37. Its project code
+uses the Unlicense. The upstream distribution includes third-party
+components with their own notices. The source archive includes the
+upstream driver source and vendor license files for review.
+
+Project executables use local ad-hoc code signatures with fixed identifiers.
+The root service authenticates native IPC against exact signed code hashes
+in root-owned private runtime copies. The GUI and root service use the same
+iKanata main executable and identifier io.github.mcuste.ikanata.
+The engine uses /Library/PrivilegedHelperTools/iKanata/kanata.
+The same signed executable resides in iKanata.app/Contents/Resources/kanata
+with identifier io.github.mcuste.ikanata.engine. The public executable directory,
+engine, and ikanata-config-reader use root:wheel ownership and mode 0755.
+The app and CLI trust references, state, logs, and the control socket remain
+under the private /Library/Application Support/iKanata directory.
+Rebuild and install the app and protected executables together when modifying them.
+No Apple developer account or signing credentials are required for the local build.
+The iKanata installer is unsigned and not notarized. macOS may block its
+installation or app launch under Gatekeeper. System security controls and
+user approvals remain in effect.
+Installation opens onboarding as the active console user and preserves saved
+configuration and startup intent. Later installs guide only missing approvals.
+Permission requests run in the nonroot iKanata app without opening devices.
+The root service checks the installed engine and determines when setup can
+continue. macOS retains all consent decisions; iKanata does not edit the privacy database.

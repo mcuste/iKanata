@@ -1,0 +1,88 @@
+diff --git a/Cargo.toml b/Cargo.toml
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -16,6 +16,9 @@ exclude = [
+ ]
+ resolver = "2"
+ 
++[patch.crates-io]
++karabiner-driverkit = { path = "karabiner-driverkit-0.3.1" }
++
+ [package]
+ name = "kanata"
+ version = "1.12.0"
+diff --git a/Cargo.lock b/Cargo.lock
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -861,8 +861,6 @@ dependencies = [
+ [[package]]
+ name = "karabiner-driverkit"
+ version = "0.3.1"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "97e4fc764f78a4a5cbf705c9502a51a0ba4931dbee25f4fbc59654059f6ca9e9"
+ dependencies = [
+  "cc",
+  "os_info",
+diff --git a/karabiner-driverkit-0.3.1/build.rs b/karabiner-driverkit-0.3.1/build.rs
+--- a/karabiner-driverkit-0.3.1/build.rs
++++ b/karabiner-driverkit-0.3.1/build.rs
+@@ -4,7 +4,7 @@ fn main() {
+     build
+         .file("c_src/driverkit.cpp")
+         .cpp(true)
+-        .std("c++2a")
++        .std("c++23")
+         .flag("-w")
+         .shared_flag(true)
+         .flag("-fPIC");
+@@ -19,18 +19,17 @@ fn main() {
+         } else {
+             println!("macOS version {major}.{minor}.{patch}, using dext...");
+             // dext
+-            build.include(
+-                "c_src/Karabiner-DriverKit-VirtualHIDDevice/include/pqrs/karabiner/driverkit",
+-            );
++            build.include("c_src/Karabiner-DriverKit-VirtualHIDDevice/include");
+             build.include("c_src/Karabiner-DriverKit-VirtualHIDDevice/vendor/vendor/include");
+-            build.include("c_src/Karabiner-DriverKit-VirtualHIDDevice/src/Daemon/vendor/include");
+         }
+     }
+ 
+     build.compile("driverkit");
+ 
+-    println!("cargo:rerun-if-changed=c_src/c_src/driverkit.hpp");
+-    println!("cargo:rerun-if-changed=c_src/c_src/driverkit.cpp");
++    println!("cargo:rerun-if-changed=c_src/driverkit.hpp");
++    println!("cargo:rerun-if-changed=c_src/driverkit.cpp");
++    println!("cargo:rerun-if-changed=c_src/Karabiner-DriverKit-VirtualHIDDevice/include");
++    println!("cargo:rerun-if-changed=c_src/Karabiner-DriverKit-VirtualHIDDevice/vendor");
+     println!("cargo:rustc-link-lib=framework=IOKit");
+     println!("cargo:rustc-link-lib=framework=CoreFoundation");
+ }
+diff --git a/karabiner-driverkit-0.3.1/c_src/driverkit.hpp b/karabiner-driverkit-0.3.1/c_src/driverkit.hpp
+--- a/karabiner-driverkit-0.3.1/c_src/driverkit.hpp
++++ b/karabiner-driverkit-0.3.1/c_src/driverkit.hpp
+@@ -25,8 +25,9 @@
+     pqrs::karabiner_virtual_hid_device::hid_report::consumer_input consumer;
+     pqrs::karabiner_virtual_hid_device::hid_report::generic_desktop_input generic_desktop;
+ #else
+-    #include "virtual_hid_device_driver.hpp"
+-    #include "virtual_hid_device_service.hpp"
++    #include <pqrs/karabiner/driverkit/virtual_hid_device_driver.hpp>
++    #include <pqrs/karabiner/driverkit/virtual_hid_device_service.hpp>
++    static_assert(type_safe::get(pqrs::karabiner::driverkit::client_protocol_version::embedded_client_protocol_version) == 7);
+     pqrs::karabiner::driverkit::virtual_hid_device_service::client* client;
+     // Tracks whether the DriverKit virtual keyboard is ready for output.
+     // Written by pqrs dispatcher callbacks, read by the event loop thread.
+diff --git a/karabiner-driverkit-0.3.1/c_src/driverkit.cpp b/karabiner-driverkit-0.3.1/c_src/driverkit.cpp
+--- a/karabiner-driverkit-0.3.1/c_src/driverkit.cpp
++++ b/karabiner-driverkit-0.3.1/c_src/driverkit.cpp
+@@ -360,7 +360,7 @@
+     }
+     #else
+     bool driver_activated() {
+-        auto service = IOServiceGetMatchingService(type_safe::get(pqrs::osx::iokit_mach_port::null),
++        auto service = IOServiceGetMatchingService(kIOMainPortDefault,
+                        IOServiceNameMatching("org_pqrs_Karabiner_DriverKit_VirtualHIDDeviceRoot"));
+         if (!service) return false;
+         IOObjectRelease(service);

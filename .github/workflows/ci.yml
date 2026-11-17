@@ -30,3 +30,11 @@ jobs:
           cargo install just --version 1.59.0 --locked
           just setup
       - run: just verify
+
+  engine:
+    name: Verify pinned engine and starter
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - run: python3 scripts/release.py engine

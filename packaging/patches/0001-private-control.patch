@@ -1,0 +1,79 @@
+diff --git a/src/tcp_server.rs b/src/tcp_server.rs
+--- a/src/tcp_server.rs
++++ b/src/tcp_server.rs
+@@ -14,8 +14,41 @@
+ use kanata_parser::cfg::SimpleSExpr;
+ #[cfg(feature = "tcp_server")]
+ use std::io::Write;
+-#[cfg(feature = "tcp_server")]
++#[cfg(all(feature = "tcp_server", not(target_os = "macos")))]
+ use std::net::{TcpListener, TcpStream};
++#[cfg(all(feature = "tcp_server", target_os = "macos"))]
++use std::os::unix::net::UnixStream as TcpStream;
++
++#[cfg(all(feature = "tcp_server", target_os = "macos"))]
++fn local_listener() -> std::os::unix::net::UnixListener {
++    use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
++    use std::os::unix::net::{UnixListener, UnixStream};
++    const DIRECTORY: &str = "/Library/Application Support/iKanata";
++    const SOCKET: &str = "/Library/Application Support/iKanata/control.sock";
++    let directory = std::fs::symlink_metadata(DIRECTORY).expect("private control directory exists");
++    assert!(directory.is_dir() && directory.uid() == 0 && directory.mode() & 0o7777 == 0o700,
++        "control directory must be root-owned with mode 0700");
++    match std::fs::symlink_metadata(SOCKET) {
++        Ok(metadata) => {
++            assert!(metadata.file_type().is_socket() && metadata.uid() == 0,
++                "existing control path must be a root-owned socket");
++            match UnixStream::connect(SOCKET) {
++                Ok(_) => panic!("another engine owns the control socket"),
++                Err(error) if error.kind() == std::io::ErrorKind::ConnectionRefused => {
++                    std::fs::remove_file(SOCKET).expect("remove stale control socket");
++                }
++                Err(error) => panic!("cannot inspect control socket: {error}"),
++            }
++        }
++        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
++        Err(error) => panic!("cannot inspect control path: {error}"),
++    }
++    let listener = UnixListener::bind(SOCKET).expect("local control server starts");
++    std::fs::set_permissions(SOCKET, std::fs::Permissions::from_mode(0o600))
++        .expect("restrict local control socket");
++    listener
++}
++
+ 
+ #[cfg(feature = "tcp_server")]
+ pub type Connections = Arc<Mutex<HashMap<String, TcpStream>>>;
+@@ -138,7 +171,10 @@
+ 
+         use crate::kanata::handle_fakekey_action;
+ 
++        #[cfg(not(target_os = "macos"))]
+         let listener = TcpListener::bind(self.address).expect("TCP server starts");
++        #[cfg(target_os = "macos")]
++        let listener = local_listener();
+ 
+         let connections = self.connections.clone();
+         let wakeup_channel = self.wakeup_channel.clone();
+@@ -163,6 +199,13 @@
+                             }
+                         }
+ 
++                        #[cfg(target_os = "macos")]
++                        let addr = {
++                            use std::sync::atomic::{AtomicU64, Ordering};
++                            static NEXT_CONNECTION: AtomicU64 = AtomicU64::new(0);
++                            NEXT_CONNECTION.fetch_add(1, Ordering::Relaxed).to_string()
++                        };
++                        #[cfg(not(target_os = "macos"))]
+                         let addr = match stream.peer_addr() {
+                             Ok(addr) => addr.to_string(),
+                             Err(e) => {
+@@ -455,6 +498,7 @@
+                                     }
+                                 }
+                             }
++                            connections.lock().remove(&addr);
+                         });
+                     }
+                     Err(_) => log::error!("not able to accept client connection"),

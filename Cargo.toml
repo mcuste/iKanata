@@ -10,6 +10,17 @@ license = "MIT"
 repository = "https://github.com/mcuste/iKanata"
 publish = false
 
+[workspace.dependencies]
+anyhow = "1.0.104"
+cliclack = "0.5.7"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+ikanata-config = { path = "crates/ikanata-config", version = "=0.1.0" }
+ikanata-core = { path = "crates/ikanata-core", version = "=0.1.0" }
+ikanata-diagnostics = { path = "crates/ikanata-diagnostics", version = "=0.1.0" }
+ikanata-native = { path = "crates/ikanata-native", version = "=0.1.0" }
+ikanata-service = { path = "crates/ikanata-service", version = "=0.1.0" }
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"

@@ -10,7 +10,7 @@ fn help_and_version_describe_the_available_interface() {
         .expect("run ikanata --help");
     assert!(help.status.success());
     let help_text = String::from_utf8(help.stdout).expect("UTF-8 help output");
-    assert!(help_text.contains("Usage: ikanata [OPTIONS]"));
+    assert!(help_text.contains("Usage: ikanata"));
     assert!(help.stderr.is_empty());
 
     let version = Command::new(env!("CARGO_BIN_EXE_ikanata"))
@@ -27,7 +27,7 @@ fn help_and_version_describe_the_available_interface() {
 
 #[test]
 fn unsupported_commands_and_extra_arguments_fail() {
-    let cases: &[&[&str]] = &[&["setup"], &["--version", "setup"]];
+    let cases: &[&[&str]] = &[&["unknown-command"], &["status", "extra"]];
     for args in cases {
         let output = Command::new(env!("CARGO_BIN_EXE_ikanata"))
             .args(*args)

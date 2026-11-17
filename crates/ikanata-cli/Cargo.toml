@@ -12,5 +12,15 @@ description = "Command-line interface for iKanata"
 name = "ikanata"
 path = "src/main.rs"
 
+[dependencies]
+anyhow.workspace = true
+clap = { version = "4.6.7", features = ["derive"] }
+cliclack.workspace = true
+tracing.workspace = true
+ikanata-core.workspace = true
+ikanata-config.workspace = true
+ikanata-native.workspace = true
+ikanata-diagnostics.workspace = true
+
 [lints]
 workspace = true

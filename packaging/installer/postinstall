@@ -1,0 +1,118 @@
+#!/bin/sh
+set -eu
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+export PATH
+
+[ "${3:-/}" = / ] || exit 1
+[ "$(id -u)" = 0 ] || exit 1
+check_acl() {
+    printf '%s\n' "$1" | awk '
+        / allow / {
+            count = split($0, permissions, /[ ,]+/)
+            for (item = 1; item <= count; item++) {
+                if (permissions[item] ~ /^(write|append|delete|delete_child|writeattr|writeextattr|writesecurity|chown|add_file|add_subdirectory)$/)
+                    exit 1
+            }
+        }
+    ' || { echo 'The installed iKanata paths have ACL write grants.' >&2; exit 1; }
+}
+
+verify_binary() {
+    [ -f "$1" ] && [ ! -L "$1" ] || exit 1
+    [ "$(stat -f %u:%g:%Lp "$1")" = 0:0:755 ] || exit 1
+    codesign --verify --strict --test-requirement "=identifier \"$2\"" "$1"
+}
+
+
+app=/Applications/iKanata.app
+private='/Library/Application Support/iKanata'
+runtime="$private/Runtime"
+clients="$runtime/Clients"
+executables=/Library/PrivilegedHelperTools/iKanata
+for directory in / /Library /Library/PrivilegedHelperTools "$executables"; do
+    [ -d "$directory" ] && [ ! -L "$directory" ] || exit 1
+    [ "$(stat -f %u "$directory")" = 0 ] || exit 1
+    unsafe=$(find "$directory" -prune \( -perm -0020 -o -perm -0002 \) -print) || exit 1
+    [ -z "$unsafe" ] || exit 1
+    acl=$(ls -lde "$directory") || exit 1
+    check_acl "$acl"
+done
+for directory in /Applications '/Library/Application Support'; do
+    [ -d "$directory" ] && [ ! -L "$directory" ] || exit 1
+    [ "$(stat -f %u "$directory")" = 0 ] || exit 1
+    acl=$(ls -lde "$directory") || exit 1
+    check_acl "$acl"
+done
+for directory in "$app" "$private" "$runtime" "$clients" "$executables"; do
+    [ -d "$directory" ] && [ ! -L "$directory" ] || exit 1
+    [ "$(stat -f %u:%g "$directory")" = 0:0 ] || exit 1
+done
+[ "$(stat -f %Lp "$executables")" = 755 ] || exit 1
+for directory in "$private" "$runtime" "$clients"; do
+    [ "$(stat -f %Lp "$directory")" = 700 ] || exit 1
+done
+for tree in "$app" "$private" "$executables"; do
+    unsafe=$(find "$tree" \( -type l -o ! -user root -o ! -group wheel -o -perm -0020 -o -perm -0002 \) -print -quit) || exit 1
+    [ -z "$unsafe" ] || {
+        echo 'The installed iKanata files are not protected.' >&2
+        exit 1
+    }
+    acl=$(find "$tree" -exec ls -lde {} +) || exit 1
+    check_acl "$acl"
+done
+verify_binary "$app/Contents/MacOS/ikanata" io.github.mcuste.ikanata.cli
+verify_binary "$clients/ikanata" io.github.mcuste.ikanata.cli
+verify_binary "$app/Contents/Resources/kanata" io.github.mcuste.ikanata.engine
+verify_binary "$executables/kanata" io.github.mcuste.ikanata.engine
+verify_binary "$executables/ikanata-config-reader" io.github.mcuste.ikanata.config-reader
+for binary in "$app/Contents/MacOS/ikanata-app" "$clients/ikanata-app"; do
+    [ -f "$binary" ] && [ "$(stat -f %u:%g:%Lp "$binary")" = 0:0:755 ] || exit 1
+done
+codesign --verify --deep --strict --test-requirement '=identifier "io.github.mcuste.ikanata"' "$app"
+cmp -s "$app/Contents/MacOS/ikanata" "$clients/ikanata"
+cmp -s "$app/Contents/MacOS/ikanata-app" "$clients/ikanata-app"
+cmp -s "$app/Contents/Resources/kanata" "$executables/kanata"
+for obsolete in "$executables/Kanata.app" "$app/Contents/Resources/Kanata.app" "$app/Contents/Library/HelperTools/ikanata-service"; do
+    [ ! -e "$obsolete" ] && [ ! -L "$obsolete" ] || exit 1
+done
+for name in kanata ikanata-config-reader ikanata-service; do
+    [ ! -e "$runtime/$name" ] && [ ! -L "$runtime/$name" ] || exit 1
+done
+log="$private/service.log"
+if [ ! -e "$log" ] && [ ! -L "$log" ]; then
+    install -o root -g wheel -m 600 /dev/null "$log"
+fi
+for file in "$private/owner" "$private/service.log" "$private/service.lock"; do
+    if [ -e "$file" ] || [ -L "$file" ]; then
+        [ -f "$file" ] && [ ! -L "$file" ] || exit 1
+        [ "$(stat -f %u:%g:%Lp "$file")" = 0:0:600 ] || exit 1
+    fi
+done
+socket="$private/control.sock"
+if [ -e "$socket" ] || [ -L "$socket" ]; then
+    [ -S "$socket" ] && [ ! -L "$socket" ] || exit 1
+    [ "$(stat -f %u:%g:%Lp "$socket")" = 0:0:600 ] || exit 1
+fi
+console_user=$(stat -f %Su /dev/console)
+console_uid=$(stat -f %u /dev/console)
+case "$console_user" in
+    root|loginwindow|_mbsetupuser|'')
+        echo 'iKanata installed. Onboarding is deferred until a user logs in and opens /Applications/iKanata.app.'
+        exit 0
+        ;;
+esac
+case "$console_uid" in
+    ''|0|*[!0-9]*)
+        echo 'iKanata installed. No active console user is available for onboarding. Open /Applications/iKanata.app after login.'
+        exit 0
+        ;;
+esac
+if ! launchctl print "gui/$console_uid" >/dev/null 2>&1; then
+    echo 'iKanata installed. No active graphical session is available for onboarding. Open /Applications/iKanata.app after login.'
+    exit 0
+fi
+if ! launchctl asuser "$console_uid" sudo -n -u "#$console_uid" -- "$app/Contents/MacOS/ikanata-app" refresh-service; then
+    echo 'iKanata installed. Service registration needs attention in Login Items & Extensions.'
+fi
+launchctl asuser "$console_uid" sudo -n -u "#$console_uid" -- /usr/bin/open -n -a "$app" --args onboard &
+echo 'iKanata installed. Onboarding will check the remaining approvals in the active user session.'

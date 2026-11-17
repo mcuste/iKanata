@@ -1,0 +1,181 @@
+#!/bin/sh
+set -eu
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+export PATH
+
+[ "${3:-/}" = / ] || { echo 'iKanata requires the startup volume.' >&2; exit 1; }
+[ "$(id -u)" = 0 ] || exit 1
+check_acl() {
+    printf '%s\n' "$1" | awk '
+        / allow / {
+            count = split($0, permissions, /[ ,]+/)
+            for (item = 1; item <= count; item++) {
+                if (permissions[item] ~ /^(write|append|delete|delete_child|writeattr|writeextattr|writesecurity|chown|add_file|add_subdirectory)$/)
+                    exit 1
+            }
+        }
+    ' || { echo 'Refusing ACL write grants on an installation path.' >&2; exit 1; }
+}
+
+check_directory() {
+    [ -d "$1" ] && [ ! -L "$1" ] || exit 1
+    [ "$(stat -f %u "$1")" = 0 ] || exit 1
+    acl=$(ls -lde "$1") || exit 1
+    check_acl "$acl"
+}
+
+check_tree() {
+    unsafe=$(find "$1" \( -type l -o ! -user root -o ! -group wheel -o -perm -0020 -o -perm -0002 \) -print -quit) || exit 1
+    [ -z "$unsafe" ] || {
+        echo 'Refusing an installation containing unprotected files.' >&2
+        exit 1
+    }
+    acl=$(find "$1" -exec ls -lde {} +) || exit 1
+    check_acl "$acl"
+}
+
+verify_binary() {
+    [ -f "$1" ] && [ ! -L "$1" ] || exit 1
+    [ "$(stat -f %u:%g:%Lp "$1")" = 0:0:755 ] || exit 1
+    codesign --verify --strict --test-requirement "=identifier \"$2\"" "$1"
+}
+
+verify_engine_bundle() {
+    bundle="$1"
+    for directory in "$bundle" "$bundle/Contents" "$bundle/Contents/MacOS" "$bundle/Contents/_CodeSignature"; do
+        check_directory "$directory"
+        [ "$(stat -f %u:%g:%Lp "$directory")" = 0:0:755 ] || exit 1
+    done
+    for file in "$bundle/Contents/Info.plist" "$bundle/Contents/_CodeSignature/CodeResources"; do
+        [ -f "$file" ] && [ ! -L "$file" ] || exit 1
+        [ "$(stat -f %u:%g:%Lp "$file")" = 0:0:644 ] || exit 1
+    done
+    binary="$bundle/Contents/MacOS/kanata"
+    [ -f "$binary" ] && [ ! -L "$binary" ] || exit 1
+    [ "$(stat -f %u:%g:%Lp "$binary")" = 0:0:755 ] || exit 1
+    codesign --verify --deep --strict --test-requirement '=identifier "io.github.mcuste.ikanata.engine"' "$bundle"
+}
+
+app=/Applications/iKanata.app
+private='/Library/Application Support/iKanata'
+runtime="$private/Runtime"
+executables=/Library/PrivilegedHelperTools/iKanata
+service=io.github.mcuste.ikanata.service
+for directory in /Applications /Library '/Library/Application Support'; do
+    check_directory "$directory"
+done
+for directory in / /Library /Library/PrivilegedHelperTools "$executables"; do
+    if [ -e "$directory" ] || [ -L "$directory" ]; then
+        check_directory "$directory"
+        unsafe=$(find "$directory" -prune \( -perm -0020 -o -perm -0002 \) -print) || exit 1
+        [ -z "$unsafe" ] || exit 1
+    fi
+done
+for directory in "$app" "$private" "$executables"; do
+    if [ -e "$directory" ] || [ -L "$directory" ]; then
+        check_directory "$directory"
+        check_tree "$directory"
+    fi
+done
+if [ -d "$executables" ]; then
+    [ "$(stat -f %u:%g:%Lp "$executables")" = 0:0:755 ] || exit 1
+fi
+for directory in "$private" "$runtime" "$runtime/Clients"; do
+    if [ -e "$directory" ] || [ -L "$directory" ]; then
+        check_directory "$directory"
+        [ "$(stat -f %u:%g:%Lp "$directory")" = 0:0:700 ] || exit 1
+    fi
+done
+for directory in "$runtime" "$executables"; do
+    for name in kanata ikanata-config-reader; do
+        binary="$directory/$name"
+        if [ -e "$binary" ] || [ -L "$binary" ]; then
+            identifier=io.github.mcuste.ikanata.engine
+            [ "$name" = kanata ] || identifier=io.github.mcuste.ikanata.config-reader
+            verify_binary "$binary" "$identifier"
+        fi
+    done
+done
+for bundle in "$executables/Kanata.app" "$app/Contents/Resources/Kanata.app"; do
+    if [ -e "$bundle" ] || [ -L "$bundle" ]; then
+        verify_engine_bundle "$bundle"
+    fi
+done
+for binary in "$runtime/ikanata-service" "$app/Contents/Library/HelperTools/ikanata-service"; do
+    if [ -e "$binary" ] || [ -L "$binary" ]; then
+        verify_binary "$binary" "$service"
+    fi
+done
+
+restore_owner=0
+restore_owner_intent() {
+    [ "$restore_owner" = 1 ] || return 0
+    owner_temp=$(mktemp "$private/.upgrade-owner.XXXXXX")
+    printf '%s\n%s\n' "$saved_owner_uid" "$saved_intent" > "$owner_temp"
+    chown root:wheel "$owner_temp"
+    chmod 600 "$owner_temp"
+    mv -f "$owner_temp" "$private/owner"
+}
+trap restore_owner_intent EXIT
+
+owned_process_running() {
+    for pid in $(pgrep -x ikanata-app || :; pgrep -x ikanata-service || :; pgrep -x kanata || :); do
+        [ "$(ps -p "$pid" -o uid= 2>/dev/null | tr -d ' ')" = 0 ] || continue
+        program=$(ps -p "$pid" -o comm= 2>/dev/null) || continue
+        case "$program" in
+            "$app/Contents/MacOS/ikanata-app"|"$app/Contents/Library/HelperTools/ikanata-service"|"$runtime/ikanata-service"|"$runtime/kanata"|"$executables/kanata"|"$executables/Kanata.app/Contents/MacOS/kanata"|"$app/Contents/Resources/kanata"|"$app/Contents/Resources/Kanata.app/Contents/MacOS/kanata")
+                return 0
+                ;;
+        esac
+    done
+    return 1
+}
+
+if launchctl print "system/$service" >/dev/null 2>&1; then
+    main="$app/Contents/MacOS/ikanata-app"
+    reference="$runtime/Clients/ikanata-app"
+    for binary in "$main" "$reference"; do
+        [ -f "$binary" ] && [ ! -L "$binary" ] || exit 1
+        [ "$(stat -f %u:%g:%Lp "$binary")" = 0:0:755 ] || exit 1
+    done
+    codesign --verify --deep --strict --test-requirement '=identifier "io.github.mcuste.ikanata"' "$app"
+    cmp -s "$main" "$reference"
+    if owned_process_running && [ -e "$private/owner" ]; then
+        [ -f "$private/owner" ] && [ ! -L "$private/owner" ] || exit 1
+        [ "$(stat -f %u:%g:%Lp "$private/owner")" = 0:0:600 ] || exit 1
+        saved_owner_uid=$(sed -n '1p' "$private/owner")
+        saved_intent=$(sed -n '2p' "$private/owner")
+        case "$saved_owner_uid" in ''|0|*[!0-9]*) exit 1 ;; esac
+        case "$saved_intent" in enabled|stopped) ;; *) exit 1 ;; esac
+        verify_binary "$app/Contents/MacOS/ikanata" io.github.mcuste.ikanata.cli
+        cmp -s "$app/Contents/MacOS/ikanata" "$runtime/Clients/ikanata"
+        restore_owner=1
+        launchctl asuser "$saved_owner_uid" sudo -n -u "#$saved_owner_uid" -- "$app/Contents/MacOS/ikanata" stop
+    fi
+    launchctl bootout "system/$service"
+fi
+
+remaining=5
+while owned_process_running; do
+    if [ "$remaining" = 0 ]; then
+        echo 'Stop the running remapper before installing iKanata.' >&2
+        exit 1
+    fi
+    sleep 1
+    remaining=$((remaining - 1))
+done
+for name in kanata ikanata-config-reader ikanata-service; do
+    binary="$runtime/$name"
+    if [ -e "$binary" ]; then
+        rm "$binary"
+    fi
+done
+for bundle in "$executables/Kanata.app" "$app/Contents/Resources/Kanata.app"; do
+    if [ -e "$bundle" ]; then
+        rm -rf "$bundle"
+    fi
+done
+helper="$app/Contents/Library/HelperTools/ikanata-service"
+if [ -e "$helper" ]; then
+    rm "$helper"
+fi

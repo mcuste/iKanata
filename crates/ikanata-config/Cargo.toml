@@ -1,0 +1,15 @@
+[package]
+name = "ikanata-config"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "User-owned Kanata configuration handling for iKanata"
+
+[dev-dependencies]
+anyhow.workspace = true
+
+[lints]
+workspace = true

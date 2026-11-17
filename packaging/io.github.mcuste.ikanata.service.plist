@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>io.github.mcuste.ikanata.service</string>
+    <key>BundleProgram</key>
+    <string>Contents/MacOS/ikanata-app</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>ikanata-app</string>
+        <string>service</string>
+    </array>
+    <key>MachServices</key>
+    <dict>
+        <key>io.github.mcuste.ikanata.service</key>
+        <true/>
+    </dict>
+    <key>UserName</key>
+    <string>root</string>
+    <key>GroupName</key>
+    <string>wheel</string>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+    <key>StandardErrorPath</key>
+    <string>/Library/Application Support/iKanata/service.log</string>
+</dict>
+</plist>

@@ -1,0 +1,226 @@
+diff --git a/src/oskbd/macos.rs b/src/oskbd/macos.rs
+--- a/src/oskbd/macos.rs
++++ b/src/oskbd/macos.rs
+@@ -38,6 +38,11 @@
+ use std::sync::atomic::{AtomicBool, Ordering};
+ use std::sync::mpsc::SyncSender as Sender;
+ use std::time::{Duration, Instant};
++
++#[path = "ikanata_session.rs"]
++mod ikanata_session;
++static IKANATA_ROOT_SESSION: AtomicBool = AtomicBool::new(false);
++pub static IKANATA_ROOT_PAUSED: AtomicBool = AtomicBool::new(false);
+ 
+ static IKANATA_SHUTDOWN: AtomicBool = AtomicBool::new(false);
+ static IKANATA_EXIT_CODE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+@@ -479,3 +484,7 @@
+ pub fn set_release_grab_on_lock(enabled: bool) {
+-    RELEASE_GRAB_ON_LOCK_ENABLED.store(enabled, Ordering::Release);
++    // SAFETY: geteuid has no arguments or memory requirements.
++    let root = unsafe { libc::geteuid() } == 0;
++    IKANATA_ROOT_SESSION.store(root, Ordering::Release);
++    IKANATA_ROOT_PAUSED.store(root, Ordering::Release);
++    RELEASE_GRAB_ON_LOCK_ENABLED.store(enabled || root, Ordering::Release);
+ }
+@@ -495,6 +503,8 @@
+-/// Decide whether the keyboard grab should currently be paused, based
+-/// on the live CGSession state for kanata's own session.
++/// Decide whether the current console state permits the keyboard grab.
+ fn should_pause_for_session() -> bool {
++    if IKANATA_ROOT_SESSION.load(Ordering::Acquire) {
++        let paused = !ikanata_session::active().unwrap_or(false);
++        IKANATA_ROOT_PAUSED.store(paused, Ordering::Release);
++        return paused;
++    }
+-    // No GUI session (launchd root daemon at boot) — preserve the
+-    // historical "always grab" behavior. See module-level notes.
+     let Some(dict) = copy_session_dict() else {
+@@ -557,4 +569,9 @@
+         })
+     {
++        if IKANATA_ROOT_SESSION.load(Ordering::Acquire) {
++            IKANATA_ROOT_PAUSED.store(true, Ordering::Release);
++            SCREEN_GRAB_PAUSED.store(true, Ordering::Release);
++            crate::IKANATA_READY.store(false, Ordering::Release);
++        }
+         log::warn!("failed to spawn screen-lock poller thread: {e}");
+     }
+@@ -1132,3 +1149,6 @@
+     pub fn write(&mut self, event: InputEvent) -> Result<(), io::Error> {
++        if event.value != 0 && IKANATA_ROOT_PAUSED.load(Ordering::Acquire) {
++            return Ok(());
++        }
+         if event.page == 0x07 && event.code == 0x39 {
+             log::debug!("Caps Lock output: using IOHIDSetModifierLockState path for {event:?}");
+@@ -1246,3 +1266,6 @@
+     pub fn send_unicode(&mut self, c: char) -> Result<(), io::Error> {
++        if IKANATA_ROOT_PAUSED.load(Ordering::Acquire) {
++            return Ok(());
++        }
+         let event = Self::make_event()?;
+         let mut arr = [0u16; 2];
+@@ -1259,3 +1282,6 @@
+     pub fn scroll(&mut self, direction: MWheelDirection, distance: u16) -> Result<(), io::Error> {
++        if IKANATA_ROOT_PAUSED.load(Ordering::Acquire) {
++            return Ok(());
++        }
+         let event = Self::make_event()?;
+         event.set_type(CGEventType::ScrollWheel);
+@@ -1296,3 +1322,6 @@
+     fn button_action(&mut self, btn: Btn, is_click: bool) -> Result<(), io::Error> {
++        if is_click && IKANATA_ROOT_PAUSED.load(Ordering::Acquire) {
++            return Ok(());
++        }
+         // (event_type, placeholder_button, real_button_number_override)
+         let (event_type, button, button_number) = match btn {
+@@ -1371,3 +1400,6 @@
+     pub fn move_mouse(&mut self, mv: CalculatedMouseMove) -> Result<(), io::Error> {
++        if IKANATA_ROOT_PAUSED.load(Ordering::Acquire) {
++            return Ok(());
++        }
+         let pressed = Self::pressed_buttons();
+ 
+@@ -1404,3 +1436,6 @@
+     pub fn move_mouse_many(&mut self, moves: &[CalculatedMouseMove]) -> Result<(), io::Error> {
++        if IKANATA_ROOT_PAUSED.load(Ordering::Acquire) {
++            return Ok(());
++        }
+         let event = Self::make_event()?;
+         let mut mouse_position = event.location();
+@@ -1417,3 +1452,6 @@
+     pub fn set_mouse(&mut self, x: u16, y: u16) -> Result<(), io::Error> {
++        if IKANATA_ROOT_PAUSED.load(Ordering::Acquire) {
++            return Ok(());
++        }
+         let display = CGDisplay::main();
+         let point = CGPoint::new(x as CGFloat, y as CGFloat);
+diff --git a/src/oskbd/ikanata_session.rs b/src/oskbd/ikanata_session.rs
+new file mode 100644
+--- /dev/null
++++ b/src/oskbd/ikanata_session.rs
+@@ -0,0 +1,108 @@
++use super::{CFBoolean, CFDictionary, CFString, CFStringRef, CFType, TCFType, dict_bool};
++use core_foundation::array::CFArray;
++use core_foundation::base::CFAllocatorRef;
++use core_foundation::dictionary::CFMutableDictionaryRef;
++use core_foundation::number::CFNumber;
++use std::sync::OnceLock;
++
++#[link(name = "IOKit", kind = "framework")]
++unsafe extern "C" {
++    fn IORegistryGetRootEntry(port: u32) -> u32;
++    fn IORegistryEntryCreateCFProperties(
++        entry: u32,
++        properties: *mut CFMutableDictionaryRef,
++        allocator: CFAllocatorRef,
++        options: u32,
++    ) -> i32;
++    fn IOObjectRelease(object: u32) -> i32;
++}
++
++#[link(name = "SystemConfiguration", kind = "framework")]
++unsafe extern "C" {
++    fn SCDynamicStoreCopyConsoleUser(
++        store: *const std::ffi::c_void,
++        uid: *mut u32,
++        gid: *mut u32,
++    ) -> CFStringRef;
++}
++
++pub(super) fn active() -> Option<bool> {
++    static OWNER: OnceLock<Option<u32>> = OnceLock::new();
++    let owner = (*OWNER.get_or_init(|| {
++        std::env::var("IKANATA_OWNER_UID")
++            .ok()?
++            .parse::<u32>()
++            .ok()
++            .filter(|uid| *uid != 0)
++    }))?;
++    // SAFETY: the default IOKit port is zero and returns an owned registry entry.
++    let root = unsafe { IORegistryGetRootEntry(0) };
++    if root == 0 {
++        return None;
++    }
++    let mut properties = std::ptr::null_mut();
++    // SAFETY: properties is writable and root remains owned until IOObjectRelease.
++    let status = unsafe {
++        let status = IORegistryEntryCreateCFProperties(root, &mut properties, std::ptr::null(), 0);
++        IOObjectRelease(root);
++        status
++    };
++    if properties.is_null() {
++        return None;
++    }
++    // SAFETY: IOKit returns a retained dictionary of Core Foundation property values.
++    let registry: CFDictionary<CFString, CFType> = unsafe {
++        CFDictionary::wrap_under_create_rule(properties.cast_const())
++    };
++    if status != 0 {
++        return None;
++    }
++    let mut locked = dict_bool(&registry, "IOConsoleLocked")?;
++    let sessions = registry.find(&CFString::from_static_string("IOConsoleUsers"))?;
++    if !sessions.instance_of::<CFArray>() {
++        return None;
++    }
++    // SAFETY: the array type was checked and registry properties contain CFType values.
++    let sessions: CFArray<CFType> = unsafe {
++        CFArray::wrap_under_get_rule(sessions.as_CFTypeRef().cast())
++    };
++    let (mut uid, mut gid) = (0, 0);
++    // SAFETY: the default store is null and both output UID/GID pointers are writable.
++    let name = unsafe { SCDynamicStoreCopyConsoleUser(std::ptr::null(), &mut uid, &mut gid) };
++    if name.is_null() {
++        return None;
++    }
++    // SAFETY: SCDynamicStoreCopyConsoleUser returns an owned string when nonnull.
++    let name = unsafe { CFString::wrap_under_create_rule(name) };
++    if uid != owner || name == CFString::from_static_string("loginwindow") {
++        return Some(false);
++    }
++    let mut active = false;
++    for value in sessions.iter() {
++        if !value.instance_of::<CFDictionary>() {
++            return None;
++        }
++        // SAFETY: the dictionary type was checked and session entries contain CFType values.
++        let session: CFDictionary<CFString, CFType> = unsafe {
++            CFDictionary::wrap_under_get_rule(value.as_CFTypeRef().cast())
++        };
++        let uid = session
++            .find(&CFString::from_static_string("kCGSSessionUserIDKey"))?
++            .downcast::<CFNumber>()?
++            .to_i64()?;
++        let uid = u32::try_from(uid).ok()?;
++        let on_console = dict_bool(&session, "kCGSSessionOnConsoleKey")?;
++        let logged_in = dict_bool(&session, "kCGSessionLoginDoneKey")?;
++        if !on_console {
++            continue;
++        }
++        if active || uid != owner || !logged_in {
++            return Some(false);
++        }
++        if let Some(value) = session.find(&CFString::from_static_string("CGSSessionScreenIsLocked")) {
++            locked |= value.downcast::<CFBoolean>().map(bool::from)?;
++        }
++        active = true;
++    }
++    Some(active && !locked)
++}
+diff --git a/src/kanata/macos.rs b/src/kanata/macos.rs
+--- a/src/kanata/macos.rs
++++ b/src/kanata/macos.rs
+@@ -8,7 +8,13 @@
+ use std::time::Duration;
+ 
+ impl Kanata {
+     pub fn start_ikanata_shutdown(kanata: Arc<Mutex<Self>>) {
+         std::thread::spawn(move || {
++            let mut paused = false;
+             while !crate::oskbd::ikanata_shutdown_requested() {
++                let now_paused = crate::oskbd::IKANATA_ROOT_PAUSED.load(std::sync::atomic::Ordering::Acquire);
++                if now_paused && !paused {
++                    kanata.lock().kbd_out.ikanata_release_output();
++                }
++                paused = now_paused;
+                 std::thread::sleep(Duration::from_millis(10));

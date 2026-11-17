@@ -1,0 +1,46 @@
+diff --git a/src/oskbd/macos.rs b/src/oskbd/macos.rs
+--- a/src/oskbd/macos.rs
++++ b/src/oskbd/macos.rs
+@@ -246,6 +246,23 @@
+ const K_IOHID_ACCESS_TYPE_UNKNOWN: u32 = 2;
+ const K_IOHID_PARAM_CONNECT_TYPE: u32 = 1;
+ const K_IOHID_CAPS_LOCK_STATE: i32 = 1;
++
++/// Check both privacy permissions without prompting or opening a device.
++pub fn ikanata_permission_status() -> i32 {
++    // SAFETY: both system functions take only scalar arguments or no arguments.
++    let permissions = unsafe {
++        (
++            AXIsProcessTrusted(),
++            IOHIDCheckAccess(K_IOHID_REQUEST_TYPE_LISTEN_EVENT) == K_IOHID_ACCESS_TYPE_GRANTED,
++        )
++    };
++    match permissions {
++        (true, true) => 0,
++        (false, true) => 10,
++        (true, false) => 11,
++        (false, false) => 12,
++    }
++}
+ 
+ #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+ pub enum AccessibilityPermissionStatus {
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -242,6 +242,15 @@
+ #[cfg(not(feature = "gui"))]
+ pub fn main() -> Result<()> {
++    #[cfg(target_os = "macos")]
++    if std::env::args_os().nth(1).as_deref()
++        == Some(std::ffi::OsStr::new("--ikanata-check-permissions"))
++    {
++        if std::env::args_os().count() != 2 {
++            std::process::exit(2);
++        }
++        std::process::exit(oskbd::ikanata_permission_status());
++    }
+     let args = Args::parse();
+     let no_wait = args.no_wait;
+     let ret = cli::main_impl();
+     if let Err(ref e) = ret {

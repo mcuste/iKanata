@@ -1,0 +1,68 @@
+{
+  "engine": {
+    "repository": "https://github.com/jtroo/kanata",
+    "release": "v1.12.0",
+    "commit": "02242ef761ef43b860eac30067ce86904be7d466",
+    "source_url": "https://codeload.github.com/jtroo/kanata/tar.gz/02242ef761ef43b860eac30067ce86904be7d466",
+    "source_sha256": "176c0186a2304b2a249a1d1b9c3f71a91ee671f0ca2398f6883c6d52e04fe634",
+    "upstream_arm64_asset_url": "https://github.com/jtroo/kanata/releases/download/v1.12.0/macos-binaries-arm64.zip",
+    "upstream_arm64_asset_sha256": "839769d189911b5881e11550eaa2039705213fb725865d088f5a2e3a6c10de32",
+    "license": "LGPL-3.0-only",
+    "default_features": false,
+    "features": [
+      "tcp_server"
+    ],
+    "command_execution": false,
+    "build_options": [
+      "--locked",
+      "--release",
+      "--target",
+      "aarch64-apple-darwin",
+      "--no-default-features",
+      "--features",
+      "tcp_server",
+      "--bin",
+      "kanata"
+    ],
+    "runtime_path": "/Library/PrivilegedHelperTools/iKanata/kanata",
+    "bundle_resource": "kanata",
+    "bundle_identifier": "io.github.mcuste.ikanata.engine",
+    "control_protocol": 1,
+    "control_transport": "UnixStream",
+    "control_path": "/Library/Application Support/iKanata/control.sock",
+    "root_config_reader": "/Library/PrivilegedHelperTools/iKanata/ikanata-config-reader",
+    "patches": [
+      "packaging/patches/0001-private-control.patch",
+      "packaging/patches/0002-owner-config-reads.patch",
+      "packaging/patches/0003-permission-preflight.patch",
+      "packaging/patches/0004-output-release.patch",
+      "packaging/patches/0005-runtime-readiness.patch",
+      "packaging/patches/0006-root-console-session.patch",
+      "packaging/patches/0007-idle-reload.patch",
+      "packaging/patches/0008-driverkit-protocol7.patch"
+    ]
+  },
+  "driver": {
+    "repository": "https://github.com/pqrs-org/Karabiner-DriverKit-VirtualHIDDevice",
+    "release": "v8.0.0",
+    "commit": "ba649ef9cbbdc453cc384838496ef03eab3e3c87",
+    "source_url": "https://codeload.github.com/pqrs-org/Karabiner-DriverKit-VirtualHIDDevice/tar.gz/ba649ef9cbbdc453cc384838496ef03eab3e3c87",
+    "source_sha256": "19f7b7659e1cb29e4b4a5a46c0af6f13f41b0dba8d2284e016be1d41f9af1007",
+    "client_protocol": 7,
+    "package": "Karabiner-DriverKit-VirtualHIDDevice-8.0.0.pkg",
+    "url": "https://github.com/pqrs-org/Karabiner-DriverKit-VirtualHIDDevice/releases/download/v8.0.0/Karabiner-DriverKit-VirtualHIDDevice-8.0.0.pkg",
+    "sha256": "0d412ea49613b70a981d816461dc3019b84a9659fde0a156939697283a61a7ac",
+    "license": "Unlicense",
+    "receipt": "org.pqrs.Karabiner-DriverKit-VirtualHIDDevice",
+    "team_id": "G43BCU2T37",
+    "daemon_identifier": "org.pqrs.Karabiner-VirtualHIDDevice-Daemon"
+  },
+  "gpl_license": {
+    "url": "https://www.gnu.org/licenses/gpl-3.0.txt",
+    "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+  },
+  "target": "aarch64-apple-darwin",
+  "minimum_macos": "15.0",
+  "bundle_identifier": "io.github.mcuste.ikanata",
+  "service_identifier": "io.github.mcuste.ikanata.service"
+}

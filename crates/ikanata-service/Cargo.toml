@@ -1,0 +1,18 @@
+[package]
+name = "ikanata-service"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+tracing.workspace = true
+ikanata-core.workspace = true
+ikanata-native.workspace = true
+serde_json = "1.0.154"
+
+[lints]
+workspace = true

@@ -1,0 +1,74 @@
+diff --git a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -15,6 +15,9 @@
+ pub use kanata_parser::cfg::FAKE_KEY_ROW;
+ pub use kanata_parser::custom_action::FakeKeyAction;
+ pub use tcp_server::TcpServer;
++
++#[cfg(target_os = "macos")]
++pub static IKANATA_READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+ 
+ type CfgPath = PathBuf;
+ 
+diff --git a/src/tcp_server.rs b/src/tcp_server.rs
+--- a/src/tcp_server.rs
++++ b/src/tcp_server.rs
+@@ -354,7 +354,7 @@
+                                             // New command: Hello - capability detection
+                                             ClientMessage::Hello {} => {
+                                                 let version = env!("CARGO_PKG_VERSION").to_string();
+-                                                let capabilities = vec![
++                                                let mut capabilities = vec![
+                                                     "reload".to_string(),
+                                                     "layer-names".to_string(),
+                                                     "fake-key-names".to_string(),
+@@ -366,6 +366,14 @@
+                                                     "fake-key".to_string(),
+                                                     "set-mouse".to_string(),
+                                                 ];
++                                                #[cfg(target_os = "macos")]
++                                                if crate::IKANATA_READY.load(std::sync::atomic::Ordering::Acquire)
++                                                    && !crate::oskbd::ikanata_shutdown_requested()
++                                                    && !crate::oskbd::is_screen_grab_paused()
++                                                    && kanata.lock().kbd_out.output_ready()
++                                                {
++                                                    capabilities.push("ikanata-ready".to_string());
++                                                }
+                                                 let msg = ServerMessage::HelloOk {
+                                                     version,
+                                                     protocol: 1,
+diff --git a/src/kanata/macos.rs b/src/kanata/macos.rs
+--- a/src/kanata/macos.rs
++++ b/src/kanata/macos.rs
+@@ -134,6 +134,11 @@
+         // See `oskbd::start_screen_lock_poller` for the design notes.
+         crate::oskbd::start_screen_lock_poller();
+ 
++        crate::IKANATA_READY.store(
++            kb.is_grabbed() && kanata.lock().kbd_out.output_ready()
++                && !crate::oskbd::is_screen_grab_paused(),
++            std::sync::atomic::Ordering::Release,
++        );
+         loop {
+             // --- Event processing loop ---
+             let needs_recovery = loop {
+@@ -243,6 +248,7 @@
+             }
+ 
+             // --- Release input so the keyboard works normally (unseized) ---
++            crate::IKANATA_READY.store(false, std::sync::atomic::Ordering::Release);
+             kb.release_input();
+ 
+             info!(
+@@ -283,6 +289,10 @@
+             // Re-seize input devices using regrab_input() which creates a fresh
+             // pipe and listener thread without re-initializing the sink client.
+             if kb.regrab_input() {
++                crate::IKANATA_READY.store(
++                    kanata.lock().kbd_out.output_ready() && !crate::oskbd::is_screen_grab_paused(),
++                    std::sync::atomic::Ordering::Release,
++                );
+                 info!("keyboard grabbed, entering event processing loop");
+             } else if continue_if_no_devices {
+                 info!("no devices grabbed after recovery, waiting for device connection...");
