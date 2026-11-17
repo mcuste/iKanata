@@ -76,6 +76,7 @@ python3 scripts/release.py release --version 0.1.0 \
 ```
 
 The command builds and validates pinned, patched Kanata with commands disabled.
+Packaging verifies and includes the checked-in GPLv3 text without downloading it.
 It ad-hoc signs project executables, the plain Kanata engine, and iKanata with explicit identifiers.
 It produces an unsigned `.pkg`, source archive, checksums, metadata, and a cask
 under `target/ikanata-release`. It does not install or publish anything.

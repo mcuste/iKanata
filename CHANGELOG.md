@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Build release packages without downloading the GPLv3 license text.
+
 ## [0.1.2] - 2026-11-17
 
 ### Added

@@ -76,6 +76,13 @@ def download(url, checksum, name):
     return destination
 
 
+def gpl_license():
+    path = ROOT / PINS["gpl_license"]["path"]
+    if digest(path) != PINS["gpl_license"]["sha256"]:
+        raise ValueError("GPL license checksum does not match")
+    return path
+
+
 def driver_source_archive():
     driver = PINS["driver"]
     return download(driver["source_url"], driver["source_sha256"],
@@ -208,8 +215,8 @@ def corresponding_source(version):
                         ignore=shutil.ignore_patterns("target", "__pycache__", ".env", ".env.*"))
     vendor_sources(project, staging / "ikanata-dependency-licenses.json")
     shutil.copy2(driver_source_archive(), staging / "source" / "driver-source.tar.gz")
-    gpl = PINS["gpl_license"]
-    shutil.copy2(download(gpl["url"], gpl["sha256"], "GPL-3.0.txt"), staging / "GPL-3.0.txt")
+    license_path = gpl_license()
+    shutil.copy2(license_path, staging / license_path.name)
     shutil.copy2(ROOT / "packaging" / "NOTICE.txt", staging / "NOTICE.txt")
     destination = BUILD / ("iKanata-" + version + "-source.tar.gz")
     run("tar", "-czf", destination, "-C", staging, ".")
@@ -289,8 +296,8 @@ def bundle(version, engine, binaries, sources):
     copy_file(ROOT / "packaging" / "NOTICE.txt", resources / "NOTICE.txt")
     licenses = resources / "Licenses"
     copy_file(prepare_engine() / "LICENSE", licenses / "Kanata-LGPL-3.0.txt")
-    gpl = PINS["gpl_license"]
-    copy_file(download(gpl["url"], gpl["sha256"], "GPL-3.0.txt"), licenses / "GPL-3.0.txt")
+    license_path = gpl_license()
+    copy_file(license_path, licenses / license_path.name)
     copy_file(ROOT / "LICENSE", licenses / "iKanata-MIT.txt")
     with tarfile.open(driver_source_archive(), "r:gz") as archive:
         member = archive.getmember("Karabiner-DriverKit-VirtualHIDDevice-" + driver["commit"] + "/LICENSE.md")
