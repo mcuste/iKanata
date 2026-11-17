@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-17
+
 ### Fixed
 
 - Keep CLI output assertions compatible with current Clippy checks.

@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "3"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
@@ -15,11 +15,11 @@ anyhow = "1.0.104"
 cliclack = "0.5.7"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-ikanata-config = { path = "crates/ikanata-config", version = "=0.1.0" }
-ikanata-core = { path = "crates/ikanata-core", version = "=0.1.0" }
-ikanata-diagnostics = { path = "crates/ikanata-diagnostics", version = "=0.1.0" }
-ikanata-native = { path = "crates/ikanata-native", version = "=0.1.0" }
-ikanata-service = { path = "crates/ikanata-service", version = "=0.1.0" }
+ikanata-config = { path = "crates/ikanata-config", version = "=0.1.1" }
+ikanata-core = { path = "crates/ikanata-core", version = "=0.1.1" }
+ikanata-diagnostics = { path = "crates/ikanata-diagnostics", version = "=0.1.1" }
+ikanata-native = { path = "crates/ikanata-native", version = "=0.1.1" }
+ikanata-service = { path = "crates/ikanata-service", version = "=0.1.1" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
